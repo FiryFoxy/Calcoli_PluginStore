@@ -1,49 +1,84 @@
+from customtkinter import *
+from plugins.base_plugin import BasePlugin
 import requests
-import customtkinter as ctk
-import io
 
-try:
-    from PIL import Image, ImageTk
-except ModuleNotFoundError:
-    import subprocess
-    subprocess.run(["pip", "install", "Pillow"])
-    from PIL import Image, ImageTk
-
-packages = []
-
-# Function to fetch and display a cute image
-def fetch_cute_image(cute_image_label):
-    url = "https://api.thecatapi.com/v1/images/search"  # The Cat API
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
+class ChangeConversionPlugin(BasePlugin):
+    def __init__(self, app, parent):
+        """
+        Initialize the Change Conversion plugin
+        
+        Parameters:
+            app: The main application window
+            parent: The frame where the plugin content will be displayed
+        """
+        self.app = app  # Store the app reference
+        self.content_frame = parent  # Store the parent frame
+        self.tab_name = "Change Converter"  # Display name in navigation
+        self.api_url = "https://open.er-api.com/v6/latest/USD"
+        
+    def create_view(self, parent):
+        """
+        Create the plugin's user interface
+        
+        Parameters:
+            parent_frame: The frame where the plugin UI should be created
+        """
+        container = CTkFrame(parent)
+        container.pack(expand=True, fill="both", padx=10, pady=10)
+        
+        title = CTkLabel(container, text="Change Conversion", font=("Arial", 16, "bold"))
+        title.pack(pady=10)
+        
+        self.amount_entry = CTkEntry(container, placeholder_text="Enter amount in USD")
+        self.amount_entry.pack(pady=5)
+        
+        self.currency_entry = CTkEntry(container, placeholder_text="Enter target currency (e.g., EUR)")
+        self.currency_entry.pack(pady=5)
+        
+        convert_button = CTkButton(container, text="Convert", command=self.calculate_change)
+        convert_button.pack(pady=5)
+        
+        self.result_label = CTkLabel(container, text="")
+        self.result_label.pack(pady=10)
+        
+    def fetch_exchange_rate(self, currency):
+        """Fetch the exchange rate for the given currency."""
+        try:
+            response = requests.get(self.api_url)
             data = response.json()
-            img_url = data[0]["url"]
+            return data['rates'].get(currency.upper(), None)
+        except Exception as e:
+            return None
+        
+    def calculate_change(self):
+        """Convert the amount based on exchange rates and calculate change breakdown."""
+        try:
+            amount = float(self.amount_entry.get())
+            currency = self.currency_entry.get().upper()
+            exchange_rate = self.fetch_exchange_rate(currency)
+            
+            if exchange_rate is None:
+                self.result_label.configure(text="Invalid currency or API error.")
+                return
+            
+            converted_amount = amount * exchange_rate
+            denominations = [50, 20, 10, 5, 2, 1, 0.50, 0.20, 0.10, 0.05, 0.01]
+            change_breakdown = {}
+            
+            for denom in denominations:
+                count = int(converted_amount // denom)
+                if count > 0:
+                    change_breakdown[denom] = count
+                    converted_amount -= count * denom
+            
+            result_text = f"{amount:.2f} USD = {amount * exchange_rate:.2f} {currency}\nChange breakdown:\n" \
+                          + "\n".join(f"{v} x {k:.2f} {currency}" for k, v in change_breakdown.items())
+            self.result_label.configure(text=result_text)
+        except ValueError:
+            self.result_label.configure(text="Invalid input. Enter a number.")
 
-            # Download the image
-            img_response = requests.get(img_url)
-            img_data = img_response.content
-            img = Image.open(io.BytesIO(img_data))
-            img = img.resize((300, 300), Image.Resampling.LANCZOS)
-
-            # Display the image in the GUI
-            cute_image = ctk.CTkImage(light_image=img, size=(300, 300))
-            cute_image_label.configure(image=cute_image)
-            cute_image_label.image = cute_image  # Keep a reference
-
-    except Exception as e:
-        print("Error fetching image:", e)
-
-def register_plugin(app, tabview):
-    """Registers the plugin with the main application."""
-    # Add a new tab to the app
-    new_tab = tabview.add("Cute Images")
-
-    # Label to display the image
-    cute_image_label = ctk.CTkLabel(new_tab, text="")
-    cute_image_label.pack(pady=10)
-
-    # Button to load an image
-    fetch_button = ctk.CTkButton(new_tab, text="Get Cute Image", 
-                                 command=lambda: fetch_cute_image(cute_image_label))
-    fetch_button.pack(pady=10)
+def register_plugin(app, content_frame):
+    """
+    Required function to register the plugin with the main application
+    """
+    return ChangeConversionPlugin(app, content_frame)
